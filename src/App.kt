@@ -6,11 +6,15 @@ import buscador.Validator.isAValidUrl
 
 object App {
     var verbose = false
+    var silent = false
     var insecure = false
+    var insensitive = false
 
     fun parseFlags(options: Collection<String>) {
         if ("--verbose" in options || "-v" in options) this.verbose = true
-        if ("--insecure" in options || "-i" in options) this.insecure = true
+        if ("--silent" in options || "-s" in options) this.silent = true
+        if ("--insensitive" in options || "-i" in options) this.insensitive = true
+        if ("--insecure" in options) this.insecure = true
     }
 
     fun printVerbose(message: Any?) {
@@ -23,7 +27,8 @@ object App {
 Usage: buscador [OPTION] URL EXPRESSION DEPTH
 
 Options:
--v, --verbose   Imprime mais detalhes sobre a operação
+-v, --verbose       Imprime mais detalhes durante a operação
+-i, --insensitive   Case insensitive match
 -h, --help      Imprime este texto de ajuda
         """.trimIndent()
         println(help)
@@ -39,14 +44,25 @@ Options:
             """
 Tempo da requisição: ${elapsedTime}ms
 Código de status: ${response.statusCode()}
-
-Cabeçalho da Requisição:
-${request.headers()}
-
-Cabeçalho da Resposta:
-${response.headers()}
         """.trimIndent()
+//
+//Cabeçalho da Requisição:
+//${request.headers()}
+//
+//Cabeçalho da Resposta:
+//${response.headers()}
         )
+    }
+
+    fun getRegexOptions(): Set<RegexOption> {
+        return mutableSetOf<RegexOption>(
+        ).apply {
+            if (insensitive) add(RegexOption.IGNORE_CASE)
+        }
+    }
+
+    fun printLoud(message: Any) {
+        if(!silent) println(message)
     }
 }
 
@@ -67,7 +83,7 @@ fun main(args: Array<String>) {
 
     val url = arguments.first()
     val query = arguments[1]
-    val depth = arguments.last()
+    val depth = arguments.last().toIntOrNull()
 
     if (url.isNullOrEmpty() || !url.isAValidUrl()) {
         println("Invalid URL. Use --help to see more information.")
@@ -77,22 +93,42 @@ fun main(args: Array<String>) {
         println("Invalid query. Use --help to see more information.")
         return
     }
-    if (depth.isNullOrEmpty() || depth.toIntOrNull() == null) {
+    if (depth == null) {
         println("Invalid depth number. Use --help to see more information.")
         return
     }
 
-    val finder = Finder()
+    run(url, query, depth)
+}
 
-    val results = finder.find(url, query, depth.toInt())
+fun run(initialUrl: String, query: String, depth: Int) {
+    val finder = Finder(initialUrl, query)
 
-    println("Resultados (${results?.size ?: 0}): ")
+    val rootPageResult = finder.find(finder.rootUrl, depth)
 
-    results?.forEach {
-        println()
-        println(it.title)
-        println(it.link)
-        println(it.context)
+    App.printVerbose("Total de páginas escaneadas: ${finder.pagesCount()}")
+
+    if (finder.pagesCount() == 0) return
+
+    val sanitized = finder.pages.values
+        .sortedBy { it.count }
+        .filter { it.matches.isNotEmpty() }
+
+
+    println("Resultados (${sanitized.size}): ")
+
+    sanitized.forEach {
+        prettyPrintResult(it)
     }
+}
 
+fun prettyPrintResult(page: Page) {
+    println(
+        """
+            ├┬▸ ${page.title}
+            │├➤ ${page.url}
+            │└➤ ${page.matches.firstOrNull()?.toString() ?: ""}
+            │
+            """.trimIndent()
+    )
 }

@@ -1,10 +1,13 @@
 package buscador
 
+import java.lang.IllegalArgumentException
+import java.net.CacheResponse
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.net.ConnectException
+import java.net.URISyntaxException
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.net.ssl.SSLContext
@@ -20,21 +23,27 @@ object HttpClientProvider {
         "User-Agent" to "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
     )
 
-
     fun get(uri: URI): HttpResponse<String>? {
-        App.printVerbose("Realizando requisição para \"${uri}\"")
+        App.printLoud("Realizando requisição para \"${uri}\"")
 
-        val request = HttpRequest.newBuilder(uri)
-            .apply { defaultHeaders.forEach { header(it.key, it.value) } }
-            .build()
+        val request = try {
+            HttpRequest.newBuilder(uri)
+                .apply { defaultHeaders.forEach { header(it.key, it.value) } }
+                .build()
+        } catch (e: IllegalArgumentException) {
+            return null
+        }
 
         val startTime = System.currentTimeMillis()
         val response = try {
             client.send(request, HttpResponse.BodyHandlers.ofString())
         } catch (e: ConnectException) {
-            println("Houve um erro de conexão durante a requisição a URL. Confira sua conexão com a internet e tente novamente.")
-            println("Utilize --verbose para visualizar mais detalhes acerca do problema")
+            App.printLoud("Houve um erro de conexão durante a requisição a URL. Confira sua conexão com a internet e tente novamente.")
+            App.printLoud("Utilize --verbose para visualizar mais detalhes acerca do problema")
             if (App.verbose) throw e
+            return null
+        } catch (e: URISyntaxException) {
+            App.printLoud("Link inválido:")
             return null
         }
         val endTime = System.currentTimeMillis()
@@ -45,8 +54,10 @@ object HttpClientProvider {
         App.printResponseDetails(response, request, elapsedTime)
 
         if (statusCode !in 200 until 300) {
-            println("Houve algo de errado durante a requisição.")
-            if (!App.verbose) println("Tente novamente utilizando o argumento '--verbose' para visualizar mais detalhes.")
+            if (!App.verbose) App.printLoud(
+                "Houve algo de errado durante a requisição. " +
+                        "Tente novamente utilizando o argumento '--verbose' para visualizar mais detalhes."
+            )
             return null
         }
 
